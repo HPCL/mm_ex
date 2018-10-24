@@ -1,17 +1,23 @@
 # matrix multiplication with openmp intended as a Caliper test
 
 CC=icpc
-CC=g++
 INC=-I${CALIPER_DIR}/include
-LIB=-L${CALIPER_DIR}/lib64 -lcaliper
+LIB=-lcaliper
+ORDER=1000
 
-all: mm mm_foo
+all: original
 
-mm: mm.c
-	${CC} -g -o mm ${INC} mm.c -DORDER=3000 -openmp ${LIB}
+original: mm_original.c
+	${CC} -O0 -g -o original ${INC} mm_original.c -DORDER=${ORDER} ${LIB} -fopenmp
 
-mm_foo: mm_foo.c
-	${CC} -O0 -g -o mm_foo ${INC} mm_foo.c -DORDER=3000 ${LIB} -fopenmp
+swapped_loops: mm_swapped_loops.c
+	${CC} -O0 -g -o swapped_loops ${INC} mm_swapped_loops.c -DORDER=${ORDER} ${LIB} -fopenmp
+
+transpose: mm_transpose.c
+	${CC} -O0 -g -o transpose ${INC} mm_transpose.c -DORDER=${ORDER} ${LIB} -fopenmp
+
+callpaths: mm_callpaths.c
+	${CC} -O0 -g -o callpaths ${INC} mm_callpaths.c -DORDER=${ORDER} ${LIB} -fopenmp
 
 clean:
 	rm -f mm mm_foo *.o *.cali *.json

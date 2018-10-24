@@ -1,7 +1,9 @@
 # Repo specific
 *.out
-mm
-mm_foo
+original
+swapped_loops
+transpose
+callpaths
 *.err
 *.json
 

@@ -38,46 +38,36 @@ CALI_CXX_MARK_FUNCTION;
 
         int i, j;
 
-        // A[N][P] -- Matrix A
-        for (i=0; i<N; i++) {
-                for (j=0; j<P; j++) {
-                        A[i][j] = AVAL;
-                }
+    if((N==M) && (M==P)){
+
+        for (i=0; i<N; i++){
+            for (j=0; j<P; j++){
+                A[i][j] = AVAL;
+                B[i][j] = BVAL;
+                C[i][j] = 0.0;
+            }
         }
+
+    } else {
+        // A[N][P] -- Matrix A
+        for (i=0; i<N; i++)
+                for (j=0; j<P; j++)
+                        A[i][j] = AVAL;
 
         // B[P][M] -- Matrix B
-        for (i=0; i<P; i++) {
-                for (j=0; j<M; j++) {
+        for (i=0; i<P; i++)
+                for (j=0; j<M; j++)
                         B[i][j] = BVAL;
-                }
-        }
+
 
         // C[N][M] -- result matrix for AB
-        for (i=0; i<N; i++) {
-                for (j=0; j<M; j++) {
+        for (i=0; i<N; i++)
+                for (j=0; j<M; j++) 
                         C[i][j] = 0.0;
-                        D[i][j] = 0.0;
-                }
-        }
+    }
+
 }
 
-// not used in this example
-double foo1(int i, int j){
-// CALI_CXX_MARK_FUNCTION;
-  D[i][j] += A[i][j] * B[i][j];
-}
-
-
-double foo2(int i){
-// CALI_CXX_MARK_FUNCTION;
-  int k,j;
-  for (j=0; j<M; j++){
-      foo1(i,j);
-      for (k=0; k<P; k++){
-        C[i][j] += A[i][k] * B[k][j];
-      }
-  }
-}
 
 // The actual mulitplication function, totally naive
 double matrix_multiply(void) {
@@ -93,38 +83,22 @@ CALI_CXX_MARK_FUNCTION;
         start = omp_get_wtime();
 
 
-    CALI_MARK_BEGIN("transpose");
+        CALI_MARK_BEGIN("transpose");
         // TODO cali block
         for (i=0; i<P; i++){
                 for (j=0; j<M; j++){
                         B_T[j][i] = B[i][j];
                 }
         }
+        CALI_MARK_END("transpose");
 
         #pragma omp parallel for private(i,j,k)
         for (i=0; i<N; i++)
-                for (j=0; j<M; j++)
-                        for (k=0; k<P; k++)
-                                D[i][j] += A[i][k] * B_T[j][k];
+            for (j=0; j<M; j++)
+                for (k=0; k<P; k++)
+                    C[i][j] += A[i][k] * B_T[j][k];
                         
 
-    CALI_MARK_END("transpose"); 
-
-    CALI_MARK_BEGIN("og_loop");
-
-
-        #pragma omp parallel for private(i,j,k)
-        for (i=0; i<N; i++){
-                for (j=0; j<M; j++){
-                        for (k=0; k<P; k++){
-                                C[i][j] += A[i][k] * B[k][j];
-                        }
-                        // foo1(i,j);
-                        // foo2(i);
-                }
-        }
- 
-    CALI_MARK_END("og_loop"); 
 
         // timer for the end of the computation
         end = omp_get_wtime();
@@ -133,28 +107,29 @@ CALI_CXX_MARK_FUNCTION;
 }
 
 
+
 // Function to check the result, relies on all values in each initial
 // matrix being the same
 int check_result(void) {
 CALI_CXX_MARK_FUNCTION;
-        int i, j;
+    int i, j;
 
-        double e  = 0.0;
-        double ee = 0.0;
-        double v  = AVAL * BVAL * ORDER;
+    double e  = 0.0;
+    double ee = 0.0;
+    double v  = AVAL * BVAL * ORDER;
 
-        for (i=0; i<N; i++) {
-                for (j=0; j<M; j++) {
-                        e = C[i][j] - v;
-                        ee += e * e;
-                }
+    for (i=0; i<N; i++) {
+        for (j=0; j<M; j++) {
+            e = C[i][j] - v;
+            ee += e * e;
         }
+    }
 
-        if (ee > TOL) {
-                return 0;
-        } else {
-                return 1;
-        }
+    if (ee > TOL) {
+        return 0;
+    } else {
+        return 1;
+    }
 }
 
 // main function
@@ -175,27 +150,26 @@ cali_set_int(thread_attr, omp_get_thread_num());
         double run_time;
         double mflops;
 
-	int nt = omp_get_max_threads();
-	printf("Availalbe threads =  %d \n", nt);
+    int nt = omp_get_max_threads();
+    printf("Availalbe threads =  %d \n", nt);
 
-        // initialize the matrices
-        matrix_init();
-        // multiply and capture the runtime
-        run_time = matrix_multiply();
-        // verify that the result is sensible
-        correct  = check_result();
+    // initialize the matrices
+    matrix_init();
+    // multiply and capture the runtime
+    run_time = matrix_multiply();
+    // verify that the result is sensible
+    correct  = check_result();
 
-        // Compute the number of mega flops
-        mflops = (2.0 * N * P * M) / (1000000.0 * run_time);
-        printf("Order %d multiplication and some other computation in %f seconds \n", ORDER, run_time);
-        
-        // Check results
-        if (! correct) {
-                fprintf(stderr,"\n Errors in multiplication");
-                err = 1;
-        } else {
-               fprintf(stdout,"\n SUCCESS : results match\n");
-        }
-        return err;
+    // Compute the number of mega flops
+    mflops = (2.0 * N * P * M) / (1000000.0 * run_time);
+    printf("Order %d multiplication and some other computation in %f seconds \n", ORDER, run_time);
+    
+    // Check results
+    if (! correct) {
+        fprintf(stderr,"\n Errors in multiplication");
+        err = 1;
+    } else {
+       fprintf(stdout,"\n SUCCESS : results match\n");
+    }
+    return err;
 }
-
