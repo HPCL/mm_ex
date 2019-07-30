@@ -2,9 +2,11 @@
 *.out
 mm
 mm_foo
+mm_mpi
 *.err
 *.json
 *.openss
+core*
 
 # Prerequisites
 *.d
