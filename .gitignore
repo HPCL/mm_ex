@@ -7,6 +7,9 @@ mm_mpi
 *.json
 *.openss
 core*
+.tau/
+*.txt
+*.sh
 
 # Prerequisites
 *.d

@@ -18,6 +18,6 @@ mm_mpi: mm_mpi.c
 	${MPICC} -O0 -g -o mm_mpi ${INC} mm_mpi.c -DORDER=1000 ${LIB} -fopenmp	
 
 clean:
-	rm -f mm mm_foo *.o
+	rm -f mm mm_foo mm_mpi *.o
 	# rm -rf MULTI__*
 

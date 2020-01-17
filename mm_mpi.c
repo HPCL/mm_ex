@@ -60,10 +60,12 @@ double row_multiply(TYPE* A, int row_a, TYPE* B, int col_b, TYPE* out_buffer) {
   for (k=0; k<ORDER; k++){
     out_buffer[row_a*ORDER+col_b] += A[row_a*ORDER+k] * B[k*ORDER+col_b];
   }
+  
+  return 0.0;
 
 }
 
-int print_mat(TYPE* C) {
+void print_mat(TYPE* C) {
   
   int i, j;
   double e  = 0.0;
@@ -243,6 +245,8 @@ int main(int argc, char **argv) {
   }
 
   MPI_Finalize();
+
+  return 0;
 
 }
 
