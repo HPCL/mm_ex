@@ -15,6 +15,13 @@
 #include <omp.h>
 #include "mpi.h"
 
+
+
+#ifdef USE_CALI
+#include <caliper/cali.h>
+#include <caliper/cali-mpi.h>
+#endif
+
 #ifndef ORDER
 #define ORDER 1000   // the order of the matrix
 #endif
@@ -27,8 +34,8 @@
 MPI_Status status;
 
 // Initialize the matrices (uniform values to make an easier check)
-void matrix_init(TYPE** A, TYPE** B, TYPE** C, int size) {
-  int i, j;
+void matrix_init(TYPE** A, TYPE** B, TYPE** C, size_t size) {
+  size_t i, j;
 
   *A = (TYPE*)malloc(size*size*sizeof(TYPE));
   *B = (TYPE*)malloc(size*size*sizeof(TYPE));
@@ -42,8 +49,20 @@ void matrix_init(TYPE** A, TYPE** B, TYPE** C, int size) {
  
 }
 
-void matrix_free(TYPE* A, TYPE* B, TYPE* C, int size) {
-  int i;
+void transpose_mat(TYPE* A) {
+
+  TYPE temp;
+  for (i=1; i<ORDER; i++) {
+    for (j=i; j<ORDER; j++) {
+      temp = A[i*ORDER+j];
+      A[i*ORDER+j]=A[j*ORDER+i];
+      A[j*ORDER+i]=temp;
+    }
+  }
+}
+
+void matrix_free(TYPE* A, TYPE* B, TYPE* C, size_t size) {
+  size_t i;
 
   free(A);
   free(B);
@@ -52,9 +71,9 @@ void matrix_free(TYPE* A, TYPE* B, TYPE* C, int size) {
 }
 
 // The actual mulitplication function, totally naive
-double row_multiply(TYPE* A, int row_a, TYPE* B, int col_b, TYPE* out_buffer) {
+double row_multiply(TYPE* A, size_t row_a, TYPE* B, size_t col_b, TYPE* out_buffer) {
 
-  int k;
+  size_t k;
   double start, end;
 
   for (k=0; k<ORDER; k++){
@@ -65,9 +84,23 @@ double row_multiply(TYPE* A, int row_a, TYPE* B, int col_b, TYPE* out_buffer) {
 
 }
 
+// The actual mulitplication function, totally naive
+double row_multiply_T(TYPE* A, size_t row_a, TYPE* B, size_t col_b, TYPE* out_buffer) {
+
+  size_t k;
+  double start, end;
+
+  for (k=0; k<ORDER; k++){
+    out_buffer[row_a*ORDER+col_b] += A[row_a*ORDER+k] * B[col_b*ORDER+k];
+  }
+  
+  return 0.0;
+
+}
+
 void print_mat(TYPE* C) {
   
-  int i, j;
+  size_t i, j;
   double e  = 0.0;
   double ee = 0.0;
   double v  = AVAL * BVAL * ORDER;
@@ -83,18 +116,18 @@ void print_mat(TYPE* C) {
 
 // Function to check the result, relies on all values in each initial
 // matrix being the same
-int check_result(TYPE* C) {
-        int i, j;
+size_t check_result(TYPE* C) {
+        size_t i, j;
 
         double e  = 0.0;
         double ee = 0.0;
         double v  = AVAL * BVAL * ORDER;
 
         for (i=0; i<ORDER; i++) {
-                for (j=0; j<ORDER; j++) {
-                        e = C[i*ORDER+j] - v;
-                        ee += e * e;
-                }
+          for (j=0; j<ORDER; j++) {
+            e = C[i*ORDER+j] - v;
+            ee += e * e;
+          }
         }
         if (ee > TOL) {
                 return 0;
@@ -108,14 +141,16 @@ int main(int argc, char **argv) {
 
   MPI_Init(&argc, &argv);
 
-  int correct;
-  int err = 0;
+  size_t order_2 = (size_t)ORDER*(size_t)ORDER;
+
+  size_t correct;
+  size_t err = 0;
   double run_time;
   double mflops;
 	
   int num_ranks, rank_id, rows_per_rank;
-  int i,j,k,r;
-  int master_rows, master_i;
+  size_t i,j,k,r;
+  size_t master_rows, master_i;
 
   double start, end;
 
@@ -126,27 +161,34 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank_id);
   MPI_Comm_size(MPI_COMM_WORLD, &num_ranks);
 
-  rows_per_rank = ORDER/(num_ranks-1);
+
+#ifdef USE_CALI
+cali_mpi_init();
+#endif
+
+  rows_per_rank = ORDER/(num_ranks-1); // TODO make it work with one process
 
   if (rank_id == 0) { // master
 
-    //int nt = omp_get_max_threads();
+    //size_t nt = omp_get_max_threads();
     printf("Available processes =  %d \n", num_ranks);
 
     // initialize the matrices
     printf("init...\n");
     master_rows =  ORDER%(num_ranks-1);
     master_i = ORDER*(ORDER-master_rows);
-    A = (TYPE*)malloc(ORDER*ORDER*sizeof(TYPE));
-    B = (TYPE*)malloc(ORDER*ORDER*sizeof(TYPE));
-    C = (TYPE*)malloc(ORDER*ORDER*sizeof(TYPE));
+    A = (TYPE*)malloc(order_2*sizeof(TYPE));
+    B = (TYPE*)malloc(order_2*sizeof(TYPE));
+    C = (TYPE*)malloc(order_2*sizeof(TYPE));
     out_buffer = (TYPE*)malloc(master_rows*ORDER*sizeof(TYPE));
 
-    for (j=0; j<ORDER*ORDER; j++) {
+    for (j=0; j<order_2; j++) {
       A[j] = AVAL;
       B[j] = BVAL;
       C[j] = 0.0;
     }
+
+    transpose_mat(B);
 
     /*
     printf("\n\n");
@@ -168,8 +210,12 @@ int main(int argc, char **argv) {
     //send
     for(r = 1; r < num_ranks; r++){
       MPI_Send(&A[(r-1)*rows_per_rank*ORDER], rows_per_rank*ORDER, MPI_DOUBLE, r, 0, MPI_COMM_WORLD);
-      MPI_Send(B, ORDER*ORDER, MPI_DOUBLE, r, 1, MPI_COMM_WORLD);  
+      MPI_Send(B, order_2, MPI_DOUBLE, r, 1, MPI_COMM_WORLD);  
     }
+
+#ifdef USE_CALI
+CALI_MARK_BEGIN("master_mult");
+#endif
 
     //multiply
     for(i = ORDER-master_rows; i < ORDER; i++){
@@ -180,6 +226,9 @@ int main(int argc, char **argv) {
       }
     }
 
+#ifdef USE_CALI
+CALI_MARK_END("master_mult");
+#endif
     //recieve
     for(r = 1; r < num_ranks; r++){
       MPI_Recv(&C[(r-1)*rows_per_rank*ORDER], rows_per_rank*ORDER, MPI_DOUBLE, r, 2, MPI_COMM_WORLD, &status);
@@ -197,7 +246,7 @@ int main(int argc, char **argv) {
 
     // Compute the number of mega flops
     run_time = end - start;
-    mflops = (2.0 * ORDER*ORDER*ORDER) / (1000000.0 * run_time);
+    mflops = (2.0 * order_2*ORDER) / (1000000.0 * run_time);
     printf("Order %d multiplication in %f seconds \n", ORDER, run_time);
     printf("Order %d multiplication at %f mflops\n", ORDER, mflops);
 
@@ -219,19 +268,31 @@ int main(int argc, char **argv) {
     //alloc
     out_buffer = (TYPE*)malloc(rows_per_rank*ORDER*sizeof(TYPE));
     A = (TYPE*)malloc(rows_per_rank*ORDER*sizeof(TYPE));
-    B = (TYPE*)malloc(ORDER*ORDER*sizeof(TYPE));
+    B = (TYPE*)malloc(order_2*sizeof(TYPE));
     for(i = 0; i < rows_per_rank*ORDER; i++) out_buffer[i]=0;
 
     //recieve
     MPI_Recv(A, rows_per_rank*ORDER, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD, &status);
-    MPI_Recv(B, ORDER*ORDER, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, &status);
+    MPI_Recv(B, order_2, MPI_DOUBLE, 0, 1, MPI_COMM_WORLD, &status);
+
+
+#ifdef USE_CALI
+CALI_MARK_BEGIN("worker_mult");
+#endif
 
     //multiply
     for(i = 0; i < rows_per_rank; i++){
       for(j = 0; j < ORDER; j++){
-        row_multiply(A, i, B, j, out_buffer);
+        for (k=0; k<ORDER; k++){
+          out_buffer[i*ORDER+j] += A[i*ORDER+k] * B[k*ORDER+j];
+        }
       }
     }
+
+
+#ifdef USE_CALI
+CALI_MARK_END("worker_mult");
+#endif
 
     //send
     MPI_Send(out_buffer, rows_per_rank*ORDER, MPI_DOUBLE, 0, 2, MPI_COMM_WORLD);
