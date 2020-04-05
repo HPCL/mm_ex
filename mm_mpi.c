@@ -12,6 +12,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <omp.h>
 #include "mpi.h"
 
@@ -30,6 +31,9 @@
 #define TOL   0.001  // tolerance used to check the result
 
 #define TYPE double
+
+#define TRUE  1
+#define FALSE 0
 
 MPI_Status status;
 
@@ -52,8 +56,8 @@ void matrix_init(TYPE** A, TYPE** B, TYPE** C, size_t size) {
 void transpose_mat(TYPE* A) {
 
   TYPE temp;
-  for (i=1; i<ORDER; i++) {
-    for (j=i; j<ORDER; j++) {
+  for (int i=1; i<ORDER; i++) {
+    for (int j=i; j<ORDER; j++) {
       temp = A[i*ORDER+j];
       A[i*ORDER+j]=A[j*ORDER+i];
       A[j*ORDER+i]=temp;
@@ -161,6 +165,14 @@ int main(int argc, char **argv) {
   MPI_Comm_rank(MPI_COMM_WORLD, &rank_id);
   MPI_Comm_size(MPI_COMM_WORLD, &num_ranks);
 
+  char do_tanspose = FALSE;
+
+  if (argc > 1) {
+    if ( !(strcmp("-t", argv[1])) || !(strcmp("--transpose", argv[1])) )
+      do_tanspose = TRUE;
+  }
+
+
 
 #ifdef USE_CALI
 cali_mpi_init();
@@ -188,7 +200,10 @@ cali_mpi_init();
       C[j] = 0.0;
     }
 
-    transpose_mat(B);
+    if(do_tanspose) {
+      printf("Transposing B matrix\n");
+      transpose_mat(B);
+    }
 
     /*
     printf("\n\n");
@@ -217,14 +232,31 @@ cali_mpi_init();
 CALI_MARK_BEGIN("master_mult");
 #endif
 
+          if(do_tanspose) {
+
     //multiply
     for(i = ORDER-master_rows; i < ORDER; i++){
       for(j = 0; j < ORDER; j++){
+        #pragma simd
         for(k = 0; k < ORDER; k++) {
-          C[i*ORDER+j] += A[i*ORDER+k] * B[k*ORDER+j];
+            C[i*ORDER+j] += A[i*ORDER+k] * B[j*ORDER+k];
         }
       }
     }
+
+          } else {
+
+    for(i = ORDER-master_rows; i < ORDER; i++){
+      for(j = 0; j < ORDER; j++){
+        #pragma simd
+        for(k = 0; k < ORDER; k++) {
+            C[i*ORDER+j] += A[i*ORDER+k] * B[k*ORDER+j];
+        }
+      }
+    }
+
+          } //transpose
+
 
 #ifdef USE_CALI
 CALI_MARK_END("master_mult");
@@ -280,14 +312,32 @@ CALI_MARK_END("master_mult");
 CALI_MARK_BEGIN("worker_mult");
 #endif
 
+          if(do_tanspose) {
+
     //multiply
     for(i = 0; i < rows_per_rank; i++){
       for(j = 0; j < ORDER; j++){
+        #pragma simd
+        #pragma ivdep
+        for (k=0; k<ORDER; k++){
+          out_buffer[i*ORDER+j] += A[i*ORDER+k] * B[j*ORDER+k];
+        }
+      }
+    }
+
+          } else {
+
+    for(i = 0; i < rows_per_rank; i++){
+      for(j = 0; j < ORDER; j++){
+        #pragma simd
+        #pragma ivdep
         for (k=0; k<ORDER; k++){
           out_buffer[i*ORDER+j] += A[i*ORDER+k] * B[k*ORDER+j];
         }
       }
     }
+
+          } // tranpose
 
 
 #ifdef USE_CALI
